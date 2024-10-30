@@ -1,0 +1,8 @@
+{
+    "REQCPU": 8,
+    "REQMEM": 16384,
+    "REQTIME": 2880,
+    "PARTITION": "academic",
+    "REQGPU": 4,
+    "REQTYP": "V100"
+}
