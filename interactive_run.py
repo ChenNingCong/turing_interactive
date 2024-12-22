@@ -33,13 +33,13 @@ def run_cmd_string(cmd : str, is_async=False):
         subprocess.run(args)
 
 print("Clean up the old key")
-run_cmd_string(f"rm {PWD}/jupyter_key {PWD}/jupyter_key.pub -f")
+run_cmd_string(f"rm {PWD}/data/jupyter_key {PWD}/data/jupyter_key.pub -f")
 print("Create ssh server key to connect to compute node.")
 print("Regenerate server key without password")
-run_cmd_string(f"""ssh-keygen -t rsa -b 4096 -f {PWD}/jupyter_key -q -N "" """)
+run_cmd_string(f"""ssh-keygen -t rsa -b 4096 -f {PWD}/data/jupyter_key -q -N "" """)
 print("Restrict permissions on key")
-run_cmd_string(f"chmod 400 {PWD}/jupyter_key")
-run_cmd_string(f"chmod 400 {PWD}/jupyter_key.pub")
+run_cmd_string(f"chmod 400 {PWD}/data/jupyter_key")
+run_cmd_string(f"chmod 400 {PWD}/data/jupyter_key.pub")
 print("Loading config")
 with open(args.config) as f:
     config = json.load(f)
@@ -67,7 +67,7 @@ if args.nodelist is not None:
 # if REQGPU != 0:
 #     REQTYP=config["REQTYP"]
 #     cmd += f"--constraint={REQTYP}"
-cmd += f"  bash {PWD}/sshd_script_new.sh {PWD}"
+cmd += f"  bash {PWD}/sshd_script_new.sh {PWD}/data"
 print(cmd)
 if not args.generate:
     run_cmd_string(cmd, is_async=True)
