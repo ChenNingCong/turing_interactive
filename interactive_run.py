@@ -64,9 +64,9 @@ srun -N 1 \
 if args.nodelist is not None:
     cmd += f"--nodelist={args.nodelist }"
 
-# if REQGPU != 0:
-#     REQTYP=config["REQTYP"]
-#     cmd += f"--constraint={REQTYP}"
+if REQGPU != 0:
+    REQTYP=config["REQTYP"]
+    cmd += f"--constraint={REQTYP}"
 cmd += f"  bash {PWD}/sshd_script_new.sh {PWD}"
 print(cmd)
 if not args.generate:
