@@ -9,7 +9,7 @@ lsof -t -i:2345 | xargs -r kill
 echo "Running sshd in the background"
 # we use a custom sshd configuration because we need to turn off pam protection
 
-SERVER_FILE=$FILE_DIR/server.sh
+SERVER_FILE=$FILE_DIR/data/server.sh
 echo $SERVER_FILE
 rm $SERVER_FILE -f
 touch $SERVER_FILE
