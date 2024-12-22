@@ -3,6 +3,7 @@ import shlex
 import argparse
 import json
 import os
+from random import randrange
 
 PWD=os.path.abspath(os.path.split(__file__)[0])
 print(PWD)
@@ -14,8 +15,15 @@ parser.add_argument('--config', type=str, help="JSON configuration file for runn
 parser.add_argument('--gpu', type=int, help="Number of gpu, default to 4") 
 parser.add_argument('--generate', default=False, action='store_true', help="Generate command for running")
 parser.add_argument('--nodelist', default=None, help="Run on a special nodelist")
+parser.add_argument('--port', default=None, help="Open a port, must specified to avoid conflict")
 
 args = parser.parse_args()
+PORT = args.port
+if PORT is None:
+    # hope that we are lucky!
+    print("WARNING : randomly open a port!")
+    PORT = randrange(3000, 8000)
+
 if args.config is None:
     if args.gpu == 0:
         args.config = f"{PWD}/cpu_default.json"
@@ -67,7 +75,7 @@ if args.nodelist is not None:
 if REQGPU != 0:
     REQTYP=config["REQTYP"]
     cmd += f"--constraint={REQTYP}"
-cmd += f"  bash {PWD}/sshd_script_new.sh {PWD}"
+cmd += f"  bash {PWD}/sshd_script_new.sh {PWD} {PORT}"
 print(cmd)
 if not args.generate:
     run_cmd_string(cmd, is_async=True)
