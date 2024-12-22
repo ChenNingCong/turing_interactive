@@ -67,7 +67,7 @@ if args.nodelist is not None:
 # if REQGPU != 0:
 #     REQTYP=config["REQTYP"]
 #     cmd += f"--constraint={REQTYP}"
-cmd += f"  bash {PWD}/sshd_script_new.sh {PWD}/data"
+cmd += f"  bash {PWD}/sshd_script_new.sh {PWD}"
 print(cmd)
 if not args.generate:
     run_cmd_string(cmd, is_async=True)

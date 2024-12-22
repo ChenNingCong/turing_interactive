@@ -28,5 +28,5 @@ echo "(The server file is also located in $SERVER_FILE)"
 echo "$CMD1" > $SERVER_FILE
 echo "$CMD2" >> $SERVER_FILE
 
-/usr/sbin/sshd -p 2345 -h "$FILE_DIR/jupyter_key" -f "$FILE_DIR/jupyter_ssh.config" 
+/usr/sbin/sshd -p 2345 -h "$FILE_DIR/data/jupyter_key" -f "$FILE_DIR/jupyter_ssh.config" 
 sleep infinity
