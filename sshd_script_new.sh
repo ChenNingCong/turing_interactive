@@ -20,8 +20,9 @@ CMD2="ssh $USER@$(hostname) -p 2345 -oStrictHostKeyChecking=no"
 echo "Run these commands to connect the network:"
 echo ""
 echo "    $CMD1"
-echo "    $CMD2"
+# echo "    $CMD2"
 echo "    $CMD2 -L 6006:localhost:6006 -L 8008:localhost:8008"
+# echo "    $CMD2 -t -L 6006:localhost:6006 -L 8008:localhost:8008 'tmux attach -t ssh_tmux || tmux new-session -s ssh_tmux' "
 echo "(The server file is also located in $SERVER_FILE)"
 
 echo "$CMD1" > $SERVER_FILE
