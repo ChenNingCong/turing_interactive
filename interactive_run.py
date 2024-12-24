@@ -7,6 +7,8 @@ from random import randrange
 
 PWD=os.path.abspath(os.path.split(__file__)[0])
 print(PWD)
+HOME=os.getenv("HOME")
+print(HOME)
 
 parser = argparse.ArgumentParser(
                     prog='sinteractive',
@@ -16,7 +18,7 @@ parser.add_argument('--gpu', type=int, help="Number of gpu, default to 4")
 parser.add_argument('--generate', default=False, action='store_true', help="Generate command for running")
 parser.add_argument('--nodelist', default=None, help="Run on a special nodelist")
 parser.add_argument('--port', default=None, help="Open a port, must specified to avoid conflict")
-
+parser.add_argument('--cleanup', action="store_true", help="Regenerate all the keys")
 args = parser.parse_args()
 PORT = args.port
 if PORT is None:
@@ -39,15 +41,31 @@ def run_cmd_string(cmd : str, is_async=False):
         subprocess.Popen(args)
     else:
         subprocess.run(args)
+import os
+os.makedirs(f"{PWD}/data/", exist_ok=True)
+os.makedirs(f"{PWD}/data/server", exist_ok=True)
+os.makedirs(f"{PWD}/data/ssh_config", exist_ok=True)
+if not os.path.exists(f"{HOME}/.ssh/turing_host_key") or args.cleanup:
+    print("Create new key")
+    print("Generate server key without password")
+    run_cmd_string(f"""ssh-keygen -t rsa -b 4096 -f {HOME}/.ssh/turing_host_key -q -N "" """)
+    run_cmd_string(f"chmod 400 {HOME}/.ssh/turing_host_key")
+    run_cmd_string(f"chmod 400 {HOME}/.ssh/turing_host_key.pub")
+    print("Generate client key without password for login")
+    run_cmd_string(f"""ssh-keygen -t rsa -b 4096 -f {HOME}/.ssh/turing_client_key -q -N "" """)
+    run_cmd_string(f"chmod 400 {HOME}/.ssh/turing_client_key")
+    run_cmd_string(f"chmod 400 {HOME}/.ssh/turing_client_key.pub")
 
-print("Clean up the old key")
-run_cmd_string(f"rm {PWD}/data/jupyter_key {PWD}/data/jupyter_key.pub -f")
-print("Create ssh server key to connect to compute node.")
-print("Regenerate server key without password")
-run_cmd_string(f"""ssh-keygen -t rsa -b 4096 -f {PWD}/data/jupyter_key -q -N "" """)
-print("Restrict permissions on key")
-run_cmd_string(f"chmod 400 {PWD}/data/jupyter_key")
-run_cmd_string(f"chmod 400 {PWD}/data/jupyter_key.pub")
+    print("Generate new ssh server config")
+    # only allow the client to login!
+    setting = {'__AuthorizedKeysFile__' : f'{HOME}/.ssh/authorized_keys'}
+    with open(f"{PWD}/ssh_template.config", 'r') as f:
+        c = f.read()
+        for i in setting:
+            c = c.replace(i, setting[i])
+        with open(f"{PWD}/data/ssh_config/ssh.config", 'w') as f:
+            f.write(c)
+
 print("Loading config")
 with open(args.config) as f:
     config = json.load(f)
@@ -75,7 +93,7 @@ if args.nodelist is not None:
 if REQGPU != 0:
     REQTYP=config["REQTYP"]
     cmd += f"--constraint={REQTYP}"
-cmd += f"  bash {PWD}/sshd_script_new.sh {PWD} {PORT}"
+cmd += f"  bash {PWD}/sshd_script_new.sh {PWD} {PORT} {HOME}"
 print(cmd)
 if not args.generate:
     run_cmd_string(cmd, is_async=True)
