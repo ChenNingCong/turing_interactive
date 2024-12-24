@@ -56,15 +56,15 @@ if not os.path.exists(f"{HOME}/.ssh/turing_host_key") or args.cleanup:
     run_cmd_string(f"chmod 400 {HOME}/.ssh/turing_client_key")
     run_cmd_string(f"chmod 400 {HOME}/.ssh/turing_client_key.pub")
 
-    print("Generate new ssh server config")
-    # only allow the client to login!
-    setting = {'__AuthorizedKeysFile__' : f'{HOME}/.ssh/authorized_keys'}
-    with open(f"{PWD}/ssh_template.config", 'r') as f:
-        c = f.read()
-        for i in setting:
-            c = c.replace(i, setting[i])
-        with open(f"{PWD}/data/ssh_config/ssh.config", 'w') as f:
-            f.write(c)
+print("Generate new ssh server config")
+# only allow the client to login!
+setting = {'__AuthorizedKeysFile__' : f'{HOME}/.ssh/authorized_keys'}
+with open(f"{PWD}/ssh_template.config", 'r') as f:
+    c = f.read()
+    for i in setting:
+        c = c.replace(i, setting[i])
+    with open(f"{PWD}/data/ssh_config/ssh.config", 'w') as f:
+        f.write(c)
 
 print("Loading config")
 with open(args.config) as f:
