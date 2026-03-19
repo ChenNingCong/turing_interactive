@@ -1,0 +1,9 @@
+{
+    "REQCPU": 8,
+    "REQMEM": 16384,
+    "REQTIME": 1439,
+    "PARTITION": "short",
+    "REQGPU": 4,
+    "REQTYP": "H100",
+    "nodelist" : "gpu-5-11"
+}

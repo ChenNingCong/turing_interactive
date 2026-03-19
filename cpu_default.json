@@ -1,8 +1,7 @@
 {
-    "REQCPU": 12,
+    "REQCPU": 64,
     "REQMEM": 65536,
-    "REQTIME": 120,
-    "PARTITION": "academic",
-    "REQGPU": 0,
-    "REQTYP": "V100"
+    "REQTIME": 1440,
+    "PARTITION": "short",
+    "REQGPU": 0
 }
