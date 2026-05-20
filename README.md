@@ -5,14 +5,13 @@ cluster — every job gets a user-owned `sshd` on its compute node, so you can
 ssh straight to the allocation, forward ports, run a Jupyter / sglang server,
 or just get a stable shell that survives login-node disconnects.
 
-Four entry points, same underlying flow:
+Three entry points, same underlying flow:
 
 | Tool | Use for |
 |---|---|
 | `sbatch_run.py` | CLI — submit a job from the terminal |
 | `smanage.py` | Terminal UI — list / connect / kill / submit sessions |
 | `web_manager.py` | Browser UI — same, but in Flask |
-| `desktop/` | Native cross-platform launcher (Tauri) — runs on your laptop, talks to the login node over SSH. See [desktop/README.md](desktop/README.md). |
 
 ## Why this exists
 
