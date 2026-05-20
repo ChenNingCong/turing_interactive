@@ -35,25 +35,37 @@ function renderSessions(sessions) {
   count.textContent = sessions.length ? `${sessions.length} job${sessions.length !== 1 ? 's' : ''}` : '';
 
   if (!sessions.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No active sessions. Submit a job below.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No active sessions. Submit a job below.</td></tr>';
     return;
   }
 
   tbody.innerHTML = sessions.map(s => {
     const sshEsc = (s.ssh_cmd || '').replace(/'/g, "\\'");
-    const alias = s.ssh_cmd && s.node ? `turing-${s.node}-${s.jid}` : null;
-    const sshCell = s.ssh_cmd
-      ? `<span class="ssh-cell" title="${s.ssh_cmd}">${s.ssh_cmd}</span>
-         <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">alias: ${alias}</span>`
-      : `<span class="text-muted">waiting for sshd…</span>`;
-    const copyBtn = s.ssh_cmd
-      ? `<button class="btn btn-copy btn-small" onclick="copySSH('${sshEsc}')">Copy</button>` : '';
-    const termBtn = s.ssh_cmd
-      ? `<button class="btn btn-primary btn-small" onclick="openTerminal('${s.jid}','${s.node || ''}')">Terminal</button>` : '';
+    const alias  = s.ssh_cmd && s.node ? `turing-${s.node}-${s.jid}` : null;
     const startCell = s.start_time && s.start_time !== 'N/A' && s.start_time !== 'Unknown'
       ? `<span style="font-family:var(--mono);font-size:11px">${s.start_time}</span>`
       : `<span class="text-muted">—</span>`;
-    return `<tr>
+    const termBtn = s.ssh_cmd
+      ? `<button class="btn btn-primary btn-small" onclick="openTerminal('${s.jid}','${s.node || ''}')">Terminal</button>` : '';
+    const fwdBtn  = s.ssh_cmd
+      ? `<button class="btn btn-copy btn-small" onclick="openForward('${s.jid}','${sshEsc}')">Forward&hellip;</button>` : '';
+    const copyBtn = s.ssh_cmd
+      ? `<button class="btn btn-copy btn-small" onclick="copySSH('${sshEsc}')">Copy SSH</button>` : '';
+
+    const detail = s.ssh_cmd
+      ? `<div class="detail-grid">
+           <div class="detail-block">
+             <span class="detail-label">SSH command</span>
+             <code class="detail-cmd">${escapeHtml(s.ssh_cmd)}</code>
+           </div>
+           <div class="detail-block">
+             <span class="detail-label">Alias</span>
+             <code class="detail-meta">${alias}</code>
+           </div>
+         </div>`
+      : `<span class="text-muted" style="font-size:11px;font-family:var(--mono)">waiting for sshd&hellip;</span>`;
+
+    return `<tr class="session-row">
       <td style="font-family:var(--mono)">${s.jid}</td>
       <td>${statusBadge(s.status)}</td>
       <td style="font-family:var(--mono);font-size:12px">${s.node || '—'}</td>
@@ -61,14 +73,19 @@ function renderSessions(sessions) {
       <td>${s.timelimit || '—'}</td>
       <td style="font-family:var(--mono);font-size:12px">${s.priority || '—'}</td>
       <td>${startCell}</td>
-      <td style="display:flex;gap:4px;white-space:nowrap">
+      <td style="display:flex;gap:4px;white-space:nowrap;flex-wrap:wrap">
         ${termBtn}
+        ${fwdBtn}
         ${copyBtn}
         <button class="btn btn-danger btn-small" onclick="confirmKill('${s.jid}')">Kill</button>
       </td>
-      <td>${sshCell}</td>
-    </tr>`;
+    </tr>
+    <tr class="session-detail"><td colspan="8">${detail}</td></tr>`;
   }).join('');
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 let _killJid = null;
@@ -96,6 +113,126 @@ async function doKillConfirmed() {
 
 function copySSH(cmd) {
   navigator.clipboard.writeText(cmd).then(() => toast('SSH command copied!'));
+}
+
+// ── Port-forward command generator ────────────────────────────────────────────
+// Takes the per-job ssh command (from server_<jid>.sh) and inserts
+// `-L <local>:localhost:<remote>` between the existing flags and the host
+// argument. The default ports are 30000/30000 — sglang's HTTP server port.
+//
+// We don't open the tunnel here: the user pastes the command into their
+// LAPTOP's terminal. While that terminal stays open, http://localhost:<local>
+// on their laptop reaches the LLM server on the compute node.
+
+let _fwdOriginal = '';
+let _fwdJid = '';
+
+const FWD_JUMP_KEY = 'turing-interactive.fwd.jump';
+
+function openForward(jid, sshCmd) {
+  _fwdOriginal = sshCmd;
+  _fwdJid = jid;
+  document.getElementById('fwd-title').textContent = `Forward a port — job ${jid}`;
+  document.getElementById('fwd-modal').style.display = 'flex';
+  // Restore last-used jump host (it's per-user laptop config, not per-job).
+  const lastJump = localStorage.getItem(FWD_JUMP_KEY) || '';
+  document.getElementById('fwd-jump').value = lastJump;
+  updateFwdPreview();
+  const target = lastJump
+    ? document.getElementById('fwd-local')
+    : document.getElementById('fwd-jump');   // first-time users start with the jump host
+  target.focus();
+  if (target.select) target.select();
+}
+
+function closeForward() {
+  document.getElementById('fwd-modal').style.display = 'none';
+  _fwdOriginal = '';
+  _fwdJid = '';
+}
+
+function buildForwardCmd(original, jumpHost, localPort, remotePort) {
+  if (!original) return null;
+  const toks = original.trim().split(/\s+/);
+  if (toks[0] !== 'ssh') return null;
+  // SSH single-letter flags that take a separate value (consume the next token):
+  const valueFlags = new Set([
+    '-p','-i','-o','-F','-l','-b','-c','-D','-e','-I','-J','-L','-R',
+    '-m','-O','-Q','-S','-W','-w','-B','-E',
+  ]);
+  let i = 1;
+  let hostIdx = -1;
+  while (i < toks.length) {
+    const t = toks[i];
+    if (valueFlags.has(t)) { i += 2; continue; }
+    if (t.startsWith('-')) { i += 1; continue; }
+    hostIdx = i;
+    break;
+  }
+  if (hostIdx < 0) return null;
+  const before = toks.slice(0, hostIdx);
+  const after  = toks.slice(hostIdx);
+  // Build: ssh <existing flags> -J <login> -L <l>:localhost:<r> <user@compute>
+  // -J makes ssh hop through the login node first; without it the compute
+  // node is unreachable from outside the cluster's inner network.
+  const jumpFlag = jumpHost ? ['-J', jumpHost] : [];
+  return [...before, ...jumpFlag, '-L', `${localPort}:localhost:${remotePort}`, ...after].join(' ');
+}
+
+function updateFwdPreview() {
+  const jump   = document.getElementById('fwd-jump').value.trim();
+  const local  = parseInt(document.getElementById('fwd-local').value, 10);
+  const remote = parseInt(document.getElementById('fwd-remote').value, 10);
+  const pre = document.getElementById('fwd-preview');
+  const err = document.getElementById('fwd-error');
+  const btn = document.getElementById('fwd-copy-btn');
+  document.getElementById('fwd-hint-local').textContent = local || '?';
+  document.getElementById('fwd-hint-remote').textContent = remote || '?';
+
+  if (!local || !remote || local < 1 || local > 65535 || remote < 1 || remote > 65535) {
+    pre.textContent = '';
+    err.style.display = 'block';
+    err.textContent = 'Ports must be between 1 and 65535.';
+    btn.disabled = true;
+    return;
+  }
+  if (!jump) {
+    pre.textContent = '';
+    err.style.display = 'block';
+    err.textContent = 'Set a jump (login) host — compute nodes are only reachable through it.';
+    btn.disabled = true;
+    return;
+  }
+  const cmd = buildForwardCmd(_fwdOriginal, jump, local, remote);
+  if (!cmd) {
+    pre.textContent = '';
+    err.style.display = 'block';
+    err.textContent = `Could not parse SSH command for job ${_fwdJid}.`;
+    btn.disabled = true;
+    return;
+  }
+  pre.textContent = cmd;
+  err.style.display = 'none';
+  btn.disabled = false;
+}
+
+function copyForward() {
+  const cmd = document.getElementById('fwd-preview').textContent;
+  if (!cmd) return;
+  // Persist the jump host so the user only types it once.
+  const jump = document.getElementById('fwd-jump').value.trim();
+  if (jump) localStorage.setItem(FWD_JUMP_KEY, jump);
+  // Close eagerly; clipboard write is best-effort (some browsers/headless
+  // contexts deny it, in which case the user can still copy from the preview).
+  closeForward();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(cmd).then(
+      () => toast('Port-forward command copied!'),
+      () => toast('Could not access clipboard — copy from the preview.', true),
+    );
+  } else {
+    toast('Clipboard unavailable — copy from the preview.', true);
+  }
 }
 
 // ── Job form ──────────────────────────────────────────────────────────────────

@@ -49,11 +49,10 @@
               <th>Priority</th>
               <th>Est. Start</th>
               <th>Actions</th>
-              <th>SSH Command</th>
             </tr>
           </thead>
           <tbody id="sessions-tbody">
-            <tr class="empty-row"><td colspan="7">Loading…</td></tr>
+            <tr class="empty-row"><td colspan="8">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -182,6 +181,54 @@
       <button class="btn btn-ghost btn-small" onclick="closePreview()">&#10005; Close</button>
     </div>
     <pre id="preview-content"></pre>
+  </div>
+</div>
+
+{# ── Port-forward command generator ── #}
+<div id="fwd-modal" style="display:none" onclick="if(event.target===this)closeForward()">
+  <div id="fwd-box">
+    <div id="fwd-header">
+      <span id="fwd-title">Forward a port to your laptop</span>
+      <button class="btn btn-ghost btn-small" onclick="closeForward()">&#10005; Close</button>
+    </div>
+    <div class="fwd-body">
+      <div class="fwd-field">
+        <label for="fwd-jump">Jump host (your laptop's SSH alias for the login node)</label>
+        <input id="fwd-jump" type="text" placeholder="e.g. turing  or  zzhang18@turing.wpi.edu"
+               oninput="updateFwdPreview()">
+        <span class="text-muted" style="font-size:10px">
+          Compute nodes are only reachable from inside the cluster network, so we
+          double-hop via the login node. Whatever you type here is passed to
+          <code>ssh -J</code>, so it must resolve on <em>your laptop</em>.
+        </span>
+      </div>
+      <div class="fwd-row">
+        <div class="fwd-field">
+          <label for="fwd-local">Local port (on your laptop)</label>
+          <input id="fwd-local" type="number" value="30000" min="1" max="65535"
+                 oninput="updateFwdPreview()">
+        </div>
+        <div class="fwd-field">
+          <label for="fwd-remote">Remote port (on the compute node)</label>
+          <input id="fwd-remote" type="number" value="30000" min="1" max="65535"
+                 oninput="updateFwdPreview()">
+        </div>
+      </div>
+      <div class="fwd-field">
+        <label>SSH command (paste in your laptop's terminal)</label>
+        <pre id="fwd-preview" class="fwd-preview"></pre>
+        <div id="fwd-error" class="text-muted" style="display:none;color:var(--red);font-size:11px"></div>
+      </div>
+      <div class="text-muted" style="font-size:11px;line-height:1.5">
+        While this command runs, <code>http://localhost:<span id="fwd-hint-local">30000</span></code>
+        on your laptop reaches port <span id="fwd-hint-remote">30000</span> on the compute node
+        (sglang default). Press <kbd>Ctrl-C</kbd> in the terminal to stop the tunnel.
+      </div>
+    </div>
+    <div class="fwd-footer">
+      <button class="btn btn-ghost" onclick="closeForward()">Close</button>
+      <button class="btn btn-copy" id="fwd-copy-btn" onclick="copyForward()">Copy command</button>
+    </div>
   </div>
 </div>
 
