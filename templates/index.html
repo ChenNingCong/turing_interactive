@@ -193,13 +193,14 @@
     </div>
     <div class="fwd-body">
       <div class="fwd-field">
-        <label for="fwd-jump">Jump host (your laptop's SSH alias for the login node)</label>
+        <label for="fwd-jump">Login host (your laptop's SSH target for the login node)</label>
         <input id="fwd-jump" type="text" placeholder="e.g. turing  or  zzhang18@turing.wpi.edu"
                oninput="updateFwdPreview()">
         <span class="text-muted" style="font-size:10px">
-          Compute nodes are only reachable from inside the cluster network, so we
-          double-hop via the login node. Whatever you type here is passed to
-          <code>ssh -J</code>, so it must resolve on <em>your laptop</em>.
+          The command opens an outer SSH from your laptop to the login node, then
+          a nested SSH from the login node to the compute node using the
+          cluster-side <code>turing_client_key</code>. You don't need a copy of
+          that key on your laptop — only your normal access to the login host.
         </span>
       </div>
       <div class="fwd-row">

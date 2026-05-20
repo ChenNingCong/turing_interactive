@@ -161,16 +161,31 @@ function closeForward() {
 }
 
 function buildForwardCmd(original, jumpHost, localPort, remotePort) {
-  if (!original) return null;
+  if (!original || !jumpHost) return null;
+  // Insert `-L <local>:localhost:<remote>` and `-N` into the per-job ssh
+  // command. The resulting inner ssh is meant to run ON THE LOGIN NODE — its
+  // -i path points to a key that lives there, not on the laptop.
+  const inner = insertForwardFlags(original, localPort, remotePort);
+  if (!inner) return null;
+  // Wrap in an outer ssh from laptop → login, with its own -L so the laptop
+  // port maps to the same port on the login side, where the inner ssh listens.
+  //
+  //   laptop:LOCAL --[outer tunnel]--> login:LOCAL --[inner tunnel]--> compute:REMOTE
+  //
+  // `exec` makes the inner ssh replace the login-side shell, so when the
+  // laptop's outer ssh dies the inner one dies with it (no orphans).
+  const escaped = inner.replace(/'/g, "'\\''");
+  return `ssh -L ${localPort}:localhost:${localPort} ${jumpHost} 'exec ${escaped}'`;
+}
+
+function insertForwardFlags(original, localPort, remotePort) {
   const toks = original.trim().split(/\s+/);
   if (toks[0] !== 'ssh') return null;
-  // SSH single-letter flags that take a separate value (consume the next token):
   const valueFlags = new Set([
     '-p','-i','-o','-F','-l','-b','-c','-D','-e','-I','-J','-L','-R',
     '-m','-O','-Q','-S','-W','-w','-B','-E',
   ]);
-  let i = 1;
-  let hostIdx = -1;
+  let i = 1, hostIdx = -1;
   while (i < toks.length) {
     const t = toks[i];
     if (valueFlags.has(t)) { i += 2; continue; }
@@ -181,11 +196,8 @@ function buildForwardCmd(original, jumpHost, localPort, remotePort) {
   if (hostIdx < 0) return null;
   const before = toks.slice(0, hostIdx);
   const after  = toks.slice(hostIdx);
-  // Build: ssh <existing flags> -J <login> -L <l>:localhost:<r> <user@compute>
-  // -J makes ssh hop through the login node first; without it the compute
-  // node is unreachable from outside the cluster's inner network.
-  const jumpFlag = jumpHost ? ['-J', jumpHost] : [];
-  return [...before, ...jumpFlag, '-L', `${localPort}:localhost:${remotePort}`, ...after].join(' ');
+  // -N => the inner ssh runs no remote command and just maintains the tunnel.
+  return [...before, '-L', `${localPort}:localhost:${remotePort}`, '-N', ...after].join(' ');
 }
 
 function updateFwdPreview() {
