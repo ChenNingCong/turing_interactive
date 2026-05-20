@@ -348,7 +348,7 @@ if __name__ == "__main__":
     a = p.parse_args()
     os.makedirs(SERVER_DIR, exist_ok=True)
     print(f"Starting Turing Session Manager on http://{a.host}:{a.port}")
-    print(f"  state dir : {STATE_ROOT}/turing_interactive")
+    print(f"  state dir : {sbatch_run.STATE}")
     print(f"  templates : {TMPL_DIR}")
     if a.host == "127.0.0.1":
         print(f"  Tip: tunnel with  ssh -L {a.port}:localhost:{a.port} <login-node>")
