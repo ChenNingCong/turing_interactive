@@ -48,6 +48,8 @@ function renderSessions(sessions) {
       : `<span class="text-muted">waiting for sshd…</span>`;
     const copyBtn = s.ssh_cmd
       ? `<button class="btn btn-copy btn-small" onclick="copySSH('${sshEsc}')">Copy</button>` : '';
+    const termBtn = s.ssh_cmd
+      ? `<button class="btn btn-primary btn-small" onclick="openTerminal('${s.jid}','${s.node || ''}')">Terminal</button>` : '';
     const startCell = s.start_time && s.start_time !== 'N/A' && s.start_time !== 'Unknown'
       ? `<span style="font-family:var(--mono);font-size:11px">${s.start_time}</span>`
       : `<span class="text-muted">—</span>`;
@@ -59,11 +61,12 @@ function renderSessions(sessions) {
       <td>${s.timelimit || '—'}</td>
       <td style="font-family:var(--mono);font-size:12px">${s.priority || '—'}</td>
       <td>${startCell}</td>
-      <td>${sshCell}</td>
       <td style="display:flex;gap:4px;white-space:nowrap">
+        ${termBtn}
         ${copyBtn}
         <button class="btn btn-danger btn-small" onclick="confirmKill('${s.jid}')">Kill</button>
       </td>
+      <td>${sshCell}</td>
     </tr>`;
   }).join('');
 }
@@ -317,4 +320,152 @@ document.addEventListener('DOMContentLoaded', () => {
     const defPart = opt?.dataset?.defaultPartition;
     if (defPart) document.getElementById('f-partition').value = defPart;
   });
+});
+
+/* ───────────────────────────────────────────────────────────────────────── *
+ * In-browser terminal (xterm.js ↔ /ws/ssh/<jid>)
+ * Short-lived SSH per WebSocket connection. Close the modal → SSH dies.
+ * Run tmux/screen inside the shell yourself for persistence.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* Tab manager — Jupyter-style: tab "control" is always present and uncloseable;
+ * each opened terminal becomes its own tab+panel. */
+
+const _tabs = new Map();   // tabId -> {jid, node, term, fit, ws}
+let   _activeTab = 'control';
+
+function _tabIdForJid(jid) { return 't-' + jid; }
+
+function switchTab(tabId) {
+  document.querySelectorAll('#tab-bar .tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tabId));
+  document.querySelectorAll('#tab-panels .tab-panel').forEach(p =>
+    p.classList.toggle('active', p.id === 'tabp-' + tabId));
+  _activeTab = tabId;
+  // After becoming visible, the xterm needs a fit() so it picks up its real size.
+  const entry = _tabs.get(tabId);
+  if (entry) {
+    requestAnimationFrame(() => {
+      try { entry.fit.fit(); } catch(e) {}
+      try { entry.term.focus(); } catch(e) {}
+    });
+  }
+}
+
+function openTerminal(jid, node) {
+  const tabId = _tabIdForJid(jid);
+  // Already open? Just switch.
+  if (_tabs.has(tabId)) {
+    switchTab(tabId);
+    return;
+  }
+
+  // Tab button
+  const tabBar = document.getElementById('tab-bar');
+  const btn = document.createElement('button');
+  btn.className = 'tab';
+  btn.dataset.tab = tabId;
+  btn.onclick = () => switchTab(tabId);
+  const label = document.createElement('span');
+  label.textContent = `${node || '?'} · ${jid}`;
+  const close = document.createElement('span');
+  close.className = 'tab-close';
+  close.textContent = '×';
+  close.title = 'Close terminal';
+  close.onclick = (e) => { e.stopPropagation(); closeTerminalTab(tabId); };
+  btn.appendChild(label);
+  btn.appendChild(close);
+  tabBar.appendChild(btn);
+
+  // Panel + host
+  const panels = document.getElementById('tab-panels');
+  const panel = document.createElement('div');
+  panel.className = 'tab-panel term-panel';
+  panel.id = 'tabp-' + tabId;
+  const status = document.createElement('div');
+  status.className = 'term-status';
+  status.textContent = 'connecting…';
+  const host = document.createElement('div');
+  host.className = 'term-host';
+  panel.appendChild(status);
+  panel.appendChild(host);
+  panels.appendChild(panel);
+
+  // xterm.js instance
+  const term = new Terminal({
+    cursorBlink: true,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 13,
+    theme: { background: '#0d0d1f' },
+    scrollback: 5000,
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(host);
+
+  // WebSocket
+  const scheme = (location.protocol === 'https:') ? 'wss' : 'ws';
+  const ws = new WebSocket(`${scheme}://${location.host}/ws/ssh/${jid}`);
+
+  ws.onopen = () => {
+    status.textContent = 'connected';
+    _sendResize(tabId);
+    term.focus();
+  };
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string' && ev.data.startsWith('{"type":"error"')) {
+      try {
+        const o = JSON.parse(ev.data);
+        if (o.type === 'error') {
+          term.write(`\r\n\x1b[31m[error] ${o.msg}\x1b[0m\r\n`);
+          status.textContent = 'error';
+          return;
+        }
+      } catch (e) {/* fall through */}
+    }
+    term.write(ev.data);
+  };
+  ws.onclose = () => {
+    status.textContent = 'disconnected';
+    try { term.write('\r\n\x1b[33m[connection closed — close this tab to dismiss]\x1b[0m\r\n'); } catch(e){}
+  };
+  ws.onerror = () => { status.textContent = 'ws error'; };
+
+  term.onData(d => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'data', payload: d }));
+    }
+  });
+  term.onResize(({ cols, rows }) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+    }
+  });
+
+  _tabs.set(tabId, { jid, node, term, fit, ws });
+
+  switchTab(tabId);
+}
+
+function _sendResize(tabId) {
+  const e = _tabs.get(tabId);
+  if (!e || e.ws.readyState !== WebSocket.OPEN) return;
+  e.ws.send(JSON.stringify({ type: 'resize', cols: e.term.cols, rows: e.term.rows }));
+}
+
+function closeTerminalTab(tabId) {
+  const e = _tabs.get(tabId);
+  if (!e) return;
+  try { e.ws.close(); } catch(_){}
+  try { e.term.dispose(); } catch(_){}
+  document.querySelector(`#tab-bar .tab[data-tab="${tabId}"]`)?.remove();
+  document.getElementById('tabp-' + tabId)?.remove();
+  _tabs.delete(tabId);
+  if (_activeTab === tabId) switchTab('control');
+}
+
+// Re-fit the active terminal when the window resizes.
+window.addEventListener('resize', () => {
+  const e = _tabs.get(_activeTab);
+  if (e) { try { e.fit.fit(); } catch(_){} }
 });

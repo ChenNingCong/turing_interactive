@@ -89,8 +89,9 @@ cd turing_interactive
 gcc -O2 -shared -fPIC -o no_nologin.so no_nologin.c -ldl    # build the shim
 ```
 
-For the web manager only: `pip install flask` (or activate a conda env that
-already has it).
+For the web manager only: `pip install flask flask-sock paramiko` (or activate
+a conda env that already has them). The in-browser terminal (xterm.js) is
+loaded from a CDN, no install needed.
 
 ## Usage
 

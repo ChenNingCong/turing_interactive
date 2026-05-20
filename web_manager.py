@@ -22,6 +22,7 @@ import subprocess
 import sys
 
 from flask import Flask, jsonify, render_template, request
+from flask_sock import Sock
 
 PWD  = os.path.abspath(os.path.dirname(__file__))
 HOME = os.environ["HOME"]
@@ -34,6 +35,7 @@ TMPL_DIR   = sbatch_run.TEMPLATE_DIR
 SBATCH_RUN = os.path.join(PWD, "sbatch_run.py")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+sock = Sock(app)
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
 
@@ -330,6 +332,101 @@ def api_kill(jid):
     if r.returncode != 0:
         return jsonify({"error": r.stderr.strip()}), 500
     return jsonify({"ok": True})
+
+
+# ── In-browser SSH terminal (xterm.js ↔ paramiko bridge) ─────────────────────
+
+CLIENT_KEY = f"{HOME}/.ssh/turing_client_key"
+
+
+def _parse_server_file(cmd: str):
+    """Parse a v2 server_<jid>.sh line:
+       ssh -i KEY -p PORT -o ... -o ... user@host
+    Returns (user, host, port) or None."""
+    m_p  = re.search(r"-p\s+(\d+)", cmd)
+    m_uh = re.search(r"(\S+?)@(\S+)\s*$", cmd)
+    if not (m_p and m_uh):
+        return None
+    return m_uh.group(1), m_uh.group(2), int(m_p.group(1))
+
+
+@sock.route("/ws/ssh/<jid>")
+def ws_ssh(ws, jid):
+    """Browser ↔ compute-node shell bridge. Short-lived SSH per WS connection;
+    the user runs tmux themselves if they want persistence."""
+    import paramiko
+    import threading
+
+    if not jid.isdigit():
+        ws.send(json.dumps({"type": "error", "msg": "bad job id"}))
+        return
+    sf = os.path.join(SERVER_DIR, f"server_{jid}.sh")
+    if not os.path.exists(sf):
+        ws.send(json.dumps({"type": "error", "msg": "session not ready or already gone"}))
+        return
+    parsed = _parse_server_file(open(sf).read().strip())
+    if not parsed:
+        ws.send(json.dumps({"type": "error", "msg": "cannot parse server file"}))
+        return
+    user, host, port = parsed
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            hostname=host, port=port, username=user,
+            key_filename=CLIENT_KEY,
+            timeout=10, look_for_keys=False, allow_agent=False,
+        )
+    except Exception as e:
+        ws.send(json.dumps({"type": "error", "msg": f"ssh connect failed: {e}"}))
+        return
+
+    channel = client.invoke_shell(term="xterm-256color", width=120, height=30)
+
+    def pump_browser_to_shell():
+        """Read JSON control messages from WS, write to shell."""
+        try:
+            while True:
+                msg = ws.receive()
+                if msg is None:
+                    break
+                try:
+                    o = json.loads(msg) if isinstance(msg, str) else {}
+                except (ValueError, TypeError):
+                    o = {}
+                t = o.get("type")
+                if t == "data":
+                    channel.send(o.get("payload", "").encode("utf-8"))
+                elif t == "resize":
+                    try:
+                        channel.resize_pty(width=int(o["cols"]), height=int(o["rows"]))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        finally:
+            try: channel.close()
+            except Exception: pass
+
+    th = threading.Thread(target=pump_browser_to_shell, daemon=True)
+    th.start()
+
+    # Main loop: shell → WS as raw UTF-8.
+    try:
+        while True:
+            data = channel.recv(4096)
+            if not data:
+                break
+            try:
+                ws.send(data.decode("utf-8", errors="replace"))
+            except Exception:
+                break
+    finally:
+        try: channel.close()
+        except Exception: pass
+        try: client.close()
+        except Exception: pass
 
 
 @app.get("/")

@@ -132,3 +132,65 @@ tbody td { padding: 8px 12px; vertical-align: middle; }
   main { grid-template-columns: 1fr; }
   .ssh-cell { max-width: 50vw; }
 }
+
+/* Jupyter-style tab bar */
+#tab-bar {
+  display: flex;
+  background: var(--surface);
+  border-bottom: 1px solid #2a2a4a;
+  padding: 0 12px;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+#tab-bar .tab {
+  background: transparent;
+  border: none;
+  border-right: 1px solid #2a2a4a;
+  color: var(--muted);
+  padding: 9px 14px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  display: flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+  position: relative;
+}
+#tab-bar .tab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+#tab-bar .tab.active {
+  color: var(--text);
+  background: var(--bg);
+  border-bottom: 2px solid var(--accent);
+  margin-bottom: -1px;
+}
+#tab-bar .tab-close {
+  opacity: 0.5;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+#tab-bar .tab-close:hover { opacity: 1; color: #ff6b6b; }
+
+#tab-panels { flex: 1; min-height: 0; }
+.tab-panel { display: none; height: 100%; }
+.tab-panel.active { display: block; }
+
+.term-panel {
+  display: none;
+  flex-direction: column;
+  background: #0d0d1f;
+  padding: 8px;
+}
+.term-panel.active { display: flex; }
+.term-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 8px 8px;
+}
+.term-host { flex: 1; min-height: 0; }
+.term-host .xterm { height: 100%; }
+.term-host .xterm-viewport { background: #0d0d1f !important; }
+
+/* Make the page fill the viewport so terminal tabs can use full height */
+body { display: flex; flex-direction: column; min-height: 100vh; }
+body > header { flex-shrink: 0; }

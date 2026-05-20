@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Turing Session Manager</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
 </head>
 <body>
 
@@ -16,6 +19,15 @@
   </button>
 </header>
 
+<nav id="tab-bar">
+  <button class="tab active" data-tab="control" onclick="switchTab('control')">
+    &#9881; Control
+  </button>
+  {# Terminal tabs are appended dynamically by app.js #}
+</nav>
+
+<div id="tab-panels">
+<div class="tab-panel active" id="tabp-control">
 <main>
   <div class="left-col">
 
@@ -36,8 +48,8 @@
               <th>Time Limit</th>
               <th>Priority</th>
               <th>Est. Start</th>
+              <th>Actions</th>
               <th>SSH Command</th>
-              <th></th>
             </tr>
           </thead>
           <tbody id="sessions-tbody">
@@ -147,6 +159,8 @@
 
   </div>{# end right-col #}
 </main>
+</div>{# end tabp-control #}
+</div>{# end tab-panels #}
 
 {# ── Kill confirmation dialog ── #}
 <div id="kill-modal" style="display:none" onclick="if(event.target===this)closeKill()">
