@@ -126,23 +126,32 @@ function copySSH(cmd) {
 
 let _fwdOriginal = '';
 let _fwdJid = '';
+let _fwdDefaults = { jump: '', local_port: 30000, remote_port: 30000 };
 
 const FWD_JUMP_KEY = 'turing-interactive.fwd.jump';
+
+async function loadFwdDefaults() {
+  try {
+    const r = await fetch('/api/launcher_defaults');
+    _fwdDefaults = await r.json();
+  } catch { /* keep the fallback above */ }
+}
 
 function openForward(jid, sshCmd) {
   _fwdOriginal = sshCmd;
   _fwdJid = jid;
   document.getElementById('fwd-title').textContent = `Forward a port — job ${jid}`;
   document.getElementById('fwd-modal').style.display = 'flex';
-  // Restore last-used jump host (it's per-user laptop config, not per-job).
-  const lastJump = localStorage.getItem(FWD_JUMP_KEY) || '';
+  // Saved value wins over server default; both win over the empty placeholder.
+  const lastJump = localStorage.getItem(FWD_JUMP_KEY) || _fwdDefaults.jump || '';
   document.getElementById('fwd-jump').value = lastJump;
+  document.getElementById('fwd-local').value  = _fwdDefaults.local_port  || 30000;
+  document.getElementById('fwd-remote').value = _fwdDefaults.remote_port || 30000;
   updateFwdPreview();
-  const target = lastJump
-    ? document.getElementById('fwd-local')
-    : document.getElementById('fwd-jump');   // first-time users start with the jump host
-  target.focus();
-  if (target.select) target.select();
+  // Focus the Copy button so a fresh user can just hit Enter.
+  const copyBtn = document.getElementById('fwd-copy-btn');
+  if (!copyBtn.disabled) copyBtn.focus();
+  else document.getElementById('fwd-jump').focus();
 }
 
 function closeForward() {
@@ -450,6 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshSessions();
   refreshTemplates();
   loadFairshare();
+  loadFwdDefaults();
   setInterval(refreshSessions, 15000);
 
   document.getElementById('f-account').addEventListener('change', function() {

@@ -204,6 +204,19 @@ def _preview_batch_script(cfg):
 
 # ── API routes ─────────────────────────────────────────────────────────────────
 
+@app.get("/api/launcher_defaults")
+def api_launcher_defaults():
+    """Initial values for the Forward-port modal so the user doesn't have to
+    type them. The jump host defaults to <user>@turing.wpi.edu, which is what
+    everyone uses to ssh into the WPI Turing cluster from the outside."""
+    user = os.getenv("USER") or os.path.basename(HOME)
+    return jsonify({
+        "jump":        f"{user}@turing.wpi.edu",
+        "local_port":  30000,
+        "remote_port": 30000,
+    })
+
+
 @app.get("/api/fairshare")
 def api_fairshare():
     user = os.getenv("USER") or os.path.basename(HOME)
