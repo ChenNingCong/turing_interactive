@@ -39,6 +39,11 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # stale app.js / index.html / style.css after a refactor. (This bit us during
 # the modal→tabs migration — old JS calling into missing modal DOM.)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+# Flask caches parsed templates in memory by default. With it on, editing
+# index.html requires a restart — and the new JS hitting an old template
+# fails silently ("tabBar is null"). Auto-reload re-parses on mtime change.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 
 @app.after_request
 def _no_cache(resp):
