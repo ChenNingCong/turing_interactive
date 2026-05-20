@@ -86,8 +86,11 @@ to clear runtime data; wipe `~/.config/turing_interactive/` to reset templates.
 ```bash
 git clone …turing_interactive
 cd turing_interactive
-gcc -O2 -shared -fPIC -o no_nologin.so no_nologin.c -ldl    # build the shim
 ```
+
+That's it for the CLI — `sbatch_run.py` auto-rebuilds `no_nologin.so` from
+`no_nologin.c` on first run (and whenever the source changes), as long as
+`gcc` is on `PATH`.
 
 For the web manager only: `pip install flask flask-sock paramiko` (or activate
 a conda env that already has them). The in-browser terminal (xterm.js) is

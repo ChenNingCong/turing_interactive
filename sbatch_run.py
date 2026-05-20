@@ -49,6 +49,34 @@ TEMPLATE_DIR = f"{CONFIG_ROOT}/templates"   # user-edited *.json job templates
 EXAMPLES_DIR = f"{PWD}/examples"            # shipped starter templates
 
 
+SHIM_SRC = f"{PWD}/no_nologin.c"
+SHIM_SO  = f"{PWD}/no_nologin.so"
+
+
+def ensure_shim_built():
+    """Compile no_nologin.so if it's missing or older than no_nologin.c.
+
+    Skipped silently if gcc isn't available — the job will run anyway and
+    sshd_<jid>.log will show the /etc/nologin denial if it bites."""
+    if not os.path.exists(SHIM_SRC):
+        return
+    if (os.path.exists(SHIM_SO) and
+        os.path.getmtime(SHIM_SO) >= os.path.getmtime(SHIM_SRC)):
+        return  # binary is up to date
+    if not shutil.which("gcc"):
+        print(f"warning: {os.path.basename(SHIM_SO)} is missing/stale and "
+              "gcc isn't on PATH — nodes with /etc/nologin will reject sessions",
+              file=sys.stderr)
+        return
+    print(f"building {os.path.basename(SHIM_SO)}…")
+    r = subprocess.run(
+        ["gcc", "-O2", "-shared", "-fPIC", "-o", SHIM_SO, SHIM_SRC, "-ldl"],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        print(f"warning: shim build failed:\n{r.stderr}", file=sys.stderr)
+
+
 def bootstrap_templates():
     """First-run only: if the user has no template directory yet, copy
     examples/*.json into it as starter content. After the directory exists
@@ -206,6 +234,7 @@ def main():
         os.makedirs(d, exist_ok=True)
 
     bootstrap_templates()
+    ensure_shim_built()
     setup_keys(cleanup=args.cleanup)
     render_sshd_config()
 
