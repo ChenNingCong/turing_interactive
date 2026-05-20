@@ -1,0 +1,8 @@
+{
+    "PARTITION": "short",
+    "REQCPU": 1,
+    "REQMEM": 512,
+    "REQTIME": 15,
+    "REQGPU": 0,
+    "WAITTIME": 300
+}

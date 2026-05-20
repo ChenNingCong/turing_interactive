@@ -1,0 +1,9 @@
+{
+    "PARTITION": "short",
+    "REQCPU": 2,
+    "REQMEM": 4096,
+    "REQTIME": 10,
+    "REQGPU": 1,
+    "REQTYP": "rtx_pro_6000_b",
+    "WAITTIME": 600
+}

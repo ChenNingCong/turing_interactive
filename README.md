@@ -1,54 +1,191 @@
-`turing_interactive` is a collection of script files designed to run on WPI's Turing Cluster interactively.
+# turing_interactive
 
-# Motivation
-WPI's slurm cluster offers a simple command `sinteractive` to execute jobs on the cluster. Unfortunately, it's really difficult to use and extend. For example, you can't fork the session in the vscode, as creating a new terminal will only give you a (bash) terminal on login node, not on compute node. Also, you can't perform ssh forwarding in this setting, because the compute node has their own ssh servers for administration, so you can't directly connect to or modify them.
+A small toolkit for opening *real* interactive sessions on WPI's Turing SLURM
+cluster — every job gets a user-owned `sshd` on its compute node, so you can
+ssh straight to the allocation, forward ports, run a Jupyter / sglang server,
+or just get a stable shell that survives login-node disconnects.
 
-To mitigate this problem, this repo allows you to open a ssh connection from the login node to the compute node, then you can do a double ssh forwarding to freely connect to the compute node at home.
+Three entry points, same underlying flow:
 
-# Usage
+| Tool | Use for |
+|---|---|
+| `sbatch_run.py` | CLI — submit a job from the terminal |
+| `smanage.py` | Terminal UI — list / connect / kill / submit sessions |
+| `web_manager.py` | Browser UI — same, but in Flask |
 
-After downloading this repo in the ***login*** node, firstly create a json file to specify the CPU/GPU/memory you need, then execute `python interactive_run.py --config <path_to_your_config.json>`. If `--config` is not provided, then the `default.json` will be used.
+## Why this exists
 
-Here are the parameters you can config (it's the same as the one required by `sinteractive`):
+WPI's `sinteractive` opens a shell on the compute node but ties it to one
+terminal: close the window, lose the session. It also doesn't let you SSH
+into the compute node directly, which breaks port forwarding for things like
+Jupyter or sglang. The cluster's own `sshd` on the compute nodes is locked
+down and won't accept ordinary logins.
+
+This toolkit works around that by launching a **second** `sshd` (yours,
+unprivileged, on a free port) from inside the sbatch job. After authentication
+all the cgroup constraints are still in effect — GPU isolation, CPU pinning,
+memory limits all match what SLURM allocated.
+
+## Architecture
+
 ```
-REQCPU: Number of CPU per task
-REQMEM: Memory, in MB
-REQTIME: Maximum time, in minutes
-PARTITION: Parition, must be a string
-REQGPU: Number of GPU, if zero, then the REQTYP parameter will be ignored 
-REQTYP: "V100" or `A100`, must be a string
+                 LOGIN NODE                        COMPUTE NODE (inside sbatch job)
+   ┌─────────────────────────────────┐      ┌─────────────────────────────────────────┐
+   │ sbatch_run.py --config A100     │      │ job_runner.sh:                          │
+   │   • render sshd config          │      │   • pick free TCP port                  │
+   │   • write authorized_keys       │ ───▶ │   • LD_PRELOAD=no_nologin.so /usr/sbin/ │
+   │   • sbatch the wrapper script   │      │     sshd -D -p $PORT -E sshd_<jid>.log  │
+   │                                 │      │   • self-test via ssh user@localhost    │
+   │   • poll for server_<jid>.sh    │ ◀─── │   • write server_<jid>.sh on success    │
+   │   • print the connect command   │      │   • on exit/cancel: clean up everything │
+   └─────────────────────────────────┘      └─────────────────────────────────────────┘
 ```
 
-After running the script, you get a terminal on a compute node just like the `sinteractive`. ***If you close this terminal, then your job will be cancelled***. This is to prevent you from forgetting to close the interactive session after you leave vscode or terminal.
+Key properties:
 
-And you can see something like (the outputs will be different depending on your username and the allocated node):
+- **`server_<jid>.sh` is a liveness signal.** It appears only after a real
+  loopback `ssh ... true` round-trip succeeds. It's deleted on job exit. So
+  "file present" ⇔ "session is up and reachable."
+- **sshd logs are surfaced.** `-E /path/to/sshd_<jid>.log` so failures aren't
+  silent. (v1 had no logs; today's first big diagnostic win.)
+- **Per-job `authorized_keys`.** Only `turing_client_key.pub` can get in. Your
+  laptop's main `~/.ssh/authorized_keys` is not involved.
+- **`/etc/nologin` is bypassed.** Some Turing compute nodes have a stale
+  `/etc/nologin` from a maintenance script; OpenSSH unconditionally honors it
+  for non-root users. `no_nologin.so` is a tiny `LD_PRELOAD` shim that makes
+  `stat("/etc/nologin")` return `ENOENT` for sshd only. Without it, about half
+  the GPU nodes silently break every session post-auth.
+
+## Layout (XDG-correct)
+
 ```
-Run these commands to connect the network:
+  Repo (this directory)              Runtime
+  ─────────────────────              ───────────────────────────────────────────
+  sbatch_run.py                      ~/.config/turing_interactive/
+  smanage.py                            templates/        user's editable JSONs
+  web_manager.py                                          (bootstrapped from
+  job_runner.sh                                           examples/ on first run)
+  no_nologin.c  (build → .so)
+  ssh_template.config                ~/.local/state/turing_interactive/
+  examples/        starter JSONs        jobs/             server_<jid>.sh,
+  templates/       Flask templates                        sshd_<jid>.log,
+  static/          Flask static                           slurm_<jid>.out
+                                        ssh/              rendered sshd.config,
+                                                          per-job authorized_keys
+                                        batch/            generated sbatch scripts
 
-    ssh-keygen -f "/home/nchen3/.ssh/known_hosts" -R "[gpu-4-21]:2345"
-    ssh nchen3@gpu-4-21 -p 2345 -oStrictHostKeyChecking=no
+                                     ~/.ssh/turing_host_key      (server identity)
+                                     ~/.ssh/turing_client_key    (login identity)
 ```
 
-Execute these two commands in a login node to establish a ssh connection to compute node.
+Nothing about the repo holds state. Wipe `~/.local/state/turing_interactive/`
+to clear runtime data; wipe `~/.config/turing_interactive/` to reset templates.
 
-# Advanced usage
+## Install
 
-Do you want to set up something like Colab notebook on Turing cluster, then just follow the instructions.
-
-After you connect to the login node, run `jupyter lab --port <compute node port>`.  This will run the jupyter lab server in the forground. You should see a lot of output. The most important is the server address (note : the port should be replaced by the port on your computer, which is created with the ssh forwarding from your computer to the login node). 
-
-![server address](image-1.png) 
-
-Then we connect to the login node with a new ssh session:
+```bash
+git clone …turing_interactive
+cd turing_interactive
+gcc -O2 -shared -fPIC -o no_nologin.so no_nologin.c -ldl    # build the shim
 ```
-    ssh-keygen -f "/home/nchen3/.ssh/known_hosts" -R "[gpu-4-21]:2345" -L <compute node port>:localhost:<login node port>
-    ssh nchen3@gpu-4-21 -p 2345 -oStrictHostKeyChecking=no
+
+For the web manager only: `pip install flask` (or activate a conda env that
+already has it).
+
+## Usage
+
+### CLI
+
+```bash
+# Submit and wait until the node is ready, then print the connect command.
+python sbatch_run.py --config A100 --wait
+
+# Same, but ssh straight into the node when ready.
+python sbatch_run.py --config H100 --connect
+
+# Fire-and-forget: returns immediately with the job id.
+python sbatch_run.py --config sglang_run
 ```
-Don't forget to substitue the username and hostname. The main difference here is that we forward the port on the compute node to a port on login node port, with the `-L` ssh forwardinng option. You can use different ports if you want. Then we need to forward the `<login node port>` on login node to a port on our own computer. On vscode, this can be achieved by `PORTS` gui. 
- ![ssh forwarding](image.png)
 
-Now you can connect to the compute node on your computer with the address. Don't forget to change the port in this address to the port on your computer.
+`--config` accepts a bare template name (`A100`), a bare filename
+(`A100.json`), or an absolute/relative path. Bare names are looked up in
+`~/.config/turing_interactive/templates/`, then in `examples/`.
 
-# How it works
-Since the compute node uses its own ssh server, we launch a second ssh server on a different port on compute node, then we establish a connection between the login node and compute node. 
+Other useful flags:
 
+| Flag | Meaning |
+|---|---|
+| `--wait` | Block until the node publishes `server_<jid>.sh` |
+| `--connect` | `--wait` + auto-`os.execvp("ssh", …)` when ready |
+| `--cleanup` | Regenerate host & client SSH keys before submitting |
+| `--print-batch` | Show the generated sbatch script and exit |
+| `--timeout N` | Override the wait timeout (default 1800s) |
+
+### TUI
+
+```bash
+python smanage.py             # interactive curses UI
+python smanage.py list        # non-interactive list
+python smanage.py connect <#> # connect by row number or job id
+python smanage.py kill <#>    # cancel
+```
+
+Inside the TUI: type to filter, `/new` to allocate, `/kill` to cancel,
+`Enter` to connect, `q` to quit.
+
+### Web
+
+```bash
+python web_manager.py --port 8001
+# then from your laptop:
+ssh -L 8001:localhost:8001 <login-node>
+# and open http://localhost:8001
+```
+
+### Config schema
+
+A template is plain JSON:
+
+```json
+{
+    "PARTITION": "short",
+    "REQCPU":    32,
+    "REQMEM":    65536,
+    "REQTIME":   1440,
+    "REQGPU":    1,
+    "REQTYP":    "rtx_pro_6000_b",
+    "nodelist":  "",
+    "account":   ""
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `PARTITION` | `short` / `quick` / `long` / `academic` |
+| `REQCPU` | Cores per task |
+| `REQMEM` | Memory in MB |
+| `REQTIME` | Wall-clock limit, minutes |
+| `REQGPU` | Number of GPUs (0 = CPU-only) |
+| `REQTYP` | GPU type — only required if `REQGPU > 0` |
+| `nodelist` | Pin to a specific node (optional) |
+| `account` | SLURM account (optional) |
+
+See `examples/` for ready-to-use starting points across the GPU pool.
+
+## Troubleshooting
+
+Most failures are now diagnosable from the published logs:
+
+| Symptom | Where to look |
+|---|---|
+| `--wait` times out | `~/.local/state/turing_interactive/jobs/slurm_<jid>.out` |
+| Job started but no `server_<jid>.sh` | `…/sshd_<jid>.log` — the actual sshd error |
+| `ssh` says "Connection refused" after ready | Job was cancelled; rerun |
+| `ssh` says "Bad configuration option" | Check `~/.ssh/config` for broken Host entries |
+| GPU not visible from inside the session | The cgroup *should* expose only allocated GPUs; check `nvidia-smi` and `/proc/self/status` |
+
+## Layout & v1 backup
+
+The original `interactive_run.py`/srun design and its supporting files are
+preserved under `_v1_backup/` (git-ignored). It's safe to delete that
+directory once you're confident the new flow covers your workflows.

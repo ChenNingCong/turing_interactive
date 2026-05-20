@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Turing Session Manager</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+  <h1>&#9881; TURING SESSION MANAGER</h1>
+  <span class="sub" id="refresh-status">Auto-refreshing every 15s</span>
+  <button class="btn btn-ghost btn-small" onclick="refreshSessions()" style="margin-left:auto">
+    &#8635; Refresh
+  </button>
+</header>
+
+<main>
+  <div class="left-col">
+
+    {# ── Active Sessions ── #}
+    <section>
+      <div class="section-header">
+        <h2>Active Sessions</h2>
+        <span id="session-count" class="text-muted" style="font-size:12px"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Job ID</th>
+              <th>Status</th>
+              <th>Node</th>
+              <th>Partition</th>
+              <th>Time Limit</th>
+              <th>Priority</th>
+              <th>Est. Start</th>
+              <th>SSH Command</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="sessions-tbody">
+            <tr class="empty-row"><td colspan="7">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    {# ── Allocate new job ── #}
+    <section>
+      <div class="section-header">
+        <h2>Allocate New Job</h2>
+        <span class="text-muted" style="font-size:11px">Load a template or fill in manually</span>
+      </div>
+      <div class="form-body">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="f-partition">Partition</label>
+            <input id="f-partition" type="text" value="short" placeholder="short / academic / gpu">
+          </div>
+          <div class="form-group">
+            <label for="f-cpu">CPUs</label>
+            <input id="f-cpu" type="number" value="8" min="1">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="f-mem">Memory (GB)</label>
+            <input id="f-mem" type="number" value="16" min="1">
+          </div>
+          <div class="form-group">
+            <label for="f-time">Time (hours)</label>
+            <input id="f-time" type="number" value="24" min="1" step="1">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="f-gpu">GPUs</label>
+            <input id="f-gpu" type="number" value="0" min="0" oninput="updateGpuTypeState()">
+          </div>
+          <div class="form-group">
+            <label for="f-gputype">GPU Type</label>
+            <select id="f-gputype" disabled>
+              <option value="">Loading…</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="f-nodelist">Node (optional)</label>
+            <input id="f-nodelist" type="text" placeholder="e.g. gpu-5-11">
+          </div>
+          <div class="form-group">
+            <label for="f-account">Account (optional)</label>
+            <select id="f-account">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" id="submit-btn" onclick="submitJob()">
+            &#9654; Submit Job
+          </button>
+          <button class="btn btn-ghost" onclick="previewScript()">
+            &#128196; Preview
+          </button>
+          <button class="btn btn-ghost" onclick="saveAsTemplate()">
+            &#9998; Save as Template
+          </button>
+          <span id="submit-msg" class="text-muted" style="font-size:12px"></span>
+        </div>
+
+      </div>
+    </section>
+
+  </div>{# end left-col #}
+
+  <div class="right-col">
+
+    {# ── Templates ── #}
+    <section style="max-height: calc(100vh - 120px); overflow-y: auto;">
+      <div class="section-header">
+        <h2>Templates</h2>
+      </div>
+
+      <div class="tmpl-list" id="tmpl-list">
+        <span class="text-muted" style="font-size:12px">Loading templates…</span>
+      </div>
+    </section>
+
+    {# ── Fairshare ── #}
+    <section>
+      <div class="section-header">
+        <h2>Fairshare</h2>
+        <button class="btn btn-ghost btn-small" onclick="loadFairshare()">&#8635;</button>
+      </div>
+      <div id="fairshare-body" style="padding:12px;font-size:12px;">
+        <span class="text-muted">Loading…</span>
+      </div>
+    </section>
+
+  </div>{# end right-col #}
+</main>
+
+{# ── Kill confirmation dialog ── #}
+<div id="kill-modal" style="display:none" onclick="if(event.target===this)closeKill()">
+  <div id="kill-box">
+    <div id="kill-header">Cancel job</div>
+    <p id="kill-msg" style="padding:16px 20px;color:var(--text)"></p>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid #2a2a4a">
+      <button class="btn btn-ghost" onclick="closeKill()">No, keep it</button>
+      <button class="btn btn-danger" id="kill-confirm-btn" onclick="doKillConfirmed()">Yes, cancel job</button>
+    </div>
+  </div>
+</div>
+
+{# ── Preview modal ── #}
+<div id="preview-modal" style="display:none" onclick="if(event.target===this)closePreview()">
+  <div id="preview-box">
+    <div id="preview-header">
+      <span>sbatch script preview</span>
+      <button class="btn btn-ghost btn-small" onclick="closePreview()">&#10005; Close</button>
+    </div>
+    <pre id="preview-content"></pre>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

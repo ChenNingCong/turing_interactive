@@ -1,0 +1,10 @@
+{
+    "PARTITION": "short",
+    "REQCPU": 32,
+    "REQMEM": 65536,
+    "REQTIME": 1440,
+    "REQGPU": 4,
+    "REQTYP": "L40S",
+    "nodelist": "",
+    "account": ""
+}

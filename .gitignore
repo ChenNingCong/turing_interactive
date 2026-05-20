@@ -1,1 +1,6 @@
 data/*
+__pycache__/
+*.pyc
+.pytest_cache/
+_v1_backup/
+no_nologin.so
