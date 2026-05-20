@@ -126,9 +126,18 @@ function copySSH(cmd) {
 
 let _fwdOriginal = '';
 let _fwdJid = '';
+let _fwdMidPort = 0;
 let _fwdDefaults = { jump: '', local_port: 30000, remote_port: 30000 };
 
 const FWD_JUMP_KEY = 'turing-interactive.fwd.jump';
+
+// Pick a random high port for the login-side bind. We avoid 30000 because
+// the VS Code remote server auto-forwards localhost ports and tends to
+// grab it; collisions on the middle hop produce "Address already in use"
+// from the inner ssh and the whole tunnel fails to come up.
+function _newMidPort() {
+  return 40000 + Math.floor(Math.random() * 20000);
+}
 
 async function loadFwdDefaults() {
   try {
@@ -140,6 +149,7 @@ async function loadFwdDefaults() {
 function openForward(jid, sshCmd) {
   _fwdOriginal = sshCmd;
   _fwdJid = jid;
+  _fwdMidPort = _newMidPort();   // fresh port each time, no collisions across opens
   document.getElementById('fwd-title').textContent = `Forward a port — job ${jid}`;
   document.getElementById('fwd-modal').style.display = 'flex';
   // Saved value wins over server default; both win over the empty placeholder.
@@ -162,20 +172,19 @@ function closeForward() {
 
 function buildForwardCmd(original, jumpHost, localPort, remotePort) {
   if (!original || !jumpHost) return null;
-  // Insert `-L <local>:localhost:<remote>` and `-N` into the per-job ssh
-  // command. The resulting inner ssh is meant to run ON THE LOGIN NODE — its
-  // -i path points to a key that lives there, not on the laptop.
-  const inner = insertForwardFlags(original, localPort, remotePort);
-  if (!inner) return null;
-  // Wrap in an outer ssh from laptop → login, with its own -L so the laptop
-  // port maps to the same port on the login side, where the inner ssh listens.
+  // Pick a non-conflicting middle port for the login-side bind (set in
+  // openForward) — sharing 30000 with the laptop+compute ends conflicts
+  // with VS Code's port auto-forwarding on the login node.
   //
-  //   laptop:LOCAL --[outer tunnel]--> login:LOCAL --[inner tunnel]--> compute:REMOTE
+  //   laptop:LOCAL --[outer]--> login:MID --[inner]--> compute:REMOTE
   //
   // `exec` makes the inner ssh replace the login-side shell, so when the
   // laptop's outer ssh dies the inner one dies with it (no orphans).
+  const midPort = _fwdMidPort || _newMidPort();
+  const inner = insertForwardFlags(original, midPort, remotePort);
+  if (!inner) return null;
   const escaped = inner.replace(/'/g, "'\\''");
-  return `ssh -L ${localPort}:localhost:${localPort} ${jumpHost} 'exec ${escaped}'`;
+  return `ssh -L ${localPort}:localhost:${midPort} ${jumpHost} 'exec ${escaped}'`;
 }
 
 function insertForwardFlags(original, localPort, remotePort) {
