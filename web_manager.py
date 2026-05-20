@@ -35,6 +35,17 @@ TMPL_DIR   = sbatch_run.TEMPLATE_DIR
 SBATCH_RUN = os.path.join(PWD, "sbatch_run.py")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+# Static assets evolve frequently here; disable caching so users don't hit
+# stale app.js / index.html / style.css after a refactor. (This bit us during
+# the modal→tabs migration — old JS calling into missing modal DOM.)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+@app.after_request
+def _no_cache(resp):
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
 sock = Sock(app)
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
